@@ -21,7 +21,7 @@ try:
 except ImportError:
     pil_image = None
 
-
+'''
 def random_rotation(x, rg, row_axis=1, col_axis=2, channel_axis=0,
                     fill_mode='nearest', cval=0.):
     """Performs a random rotation of a Numpy image tensor.
@@ -51,8 +51,10 @@ def random_rotation(x, rg, row_axis=1, col_axis=2, channel_axis=0,
     x = apply_transform(x, transform_matrix, channel_axis, fill_mode, cval)
     #x = np.expand_dims(x, axis=0)
     return x
+'''
 
 
+'''
 def random_shift(x, wrg, hrg, row_axis=1, col_axis=2, channel_axis=0,
                  fill_mode='nearest', cval=0.):
     """Performs a random spatial shift of a Numpy image tensor.
@@ -85,8 +87,9 @@ def random_shift(x, wrg, hrg, row_axis=1, col_axis=2, channel_axis=0,
     x = apply_transform(x, transform_matrix, channel_axis, fill_mode, cval)
     #x = np.expand_dims(x, axis=0)
     return x
+'''
 
-
+'''
 def random_shear(x, intensity, row_axis=1, col_axis=2, channel_axis=0,
                  fill_mode='nearest', cval=0.):
     """Performs a random spatial shear of a Numpy image tensor.
@@ -117,8 +120,10 @@ def random_shear(x, intensity, row_axis=1, col_axis=2, channel_axis=0,
     x = apply_transform(x, transform_matrix, channel_axis, fill_mode, cval)
     #x = np.expand_dims(x, axis=0)
     return x
+'''
 
 
+'''
 def random_zoom(x, zoom_range, row_axis=1, col_axis=2, channel_axis=0,
                 fill_mode='nearest', cval=0.):
     """Performs a random spatial zoom of a Numpy image tensor.
@@ -157,8 +162,10 @@ def random_zoom(x, zoom_range, row_axis=1, col_axis=2, channel_axis=0,
     transform_matrix = transform_matrix_offset_center(zoom_matrix, h, w)
     x = apply_transform(x, transform_matrix, channel_axis, fill_mode, cval)
     return x
+'''
 
 
+'''
 def random_channel_shift(x, intensity, channel_axis=0):
     x = np.rollaxis(x, channel_axis, 0)
     min_x, max_x = np.min(x), np.max(x)
@@ -167,17 +174,22 @@ def random_channel_shift(x, intensity, channel_axis=0):
     x = np.stack(channel_images, axis=0)
     x = np.rollaxis(x, 0, channel_axis + 1)
     return x
+'''
 
 
-def transform_matrix_offset_center(matrix, x, y):
+'''
+def transform_matrix_offset_center(matrix, x, y, z):
     o_x = float(x) / 2 + 0.5
     o_y = float(y) / 2 + 0.5
-    offset_matrix = np.array([[1, 0, o_x], [0, 1, o_y], [0, 0, 1]])
-    reset_matrix = np.array([[1, 0, -o_x], [0, 1, -o_y], [0, 0, 1]])
+    o_z = float(z) / 2 + 0.5
+    offset_matrix = np.array([[1, 0, o_x], [0, 1, o_y], [0, 0, o_z]])
+    reset_matrix = np.array([[1, 0, -o_x], [0, 1, -o_y], [0, 0, -o_z]])
     transform_matrix = np.dot(np.dot(offset_matrix, matrix), reset_matrix)
     return transform_matrix
+'''
 
 
+'''
 def apply_transform(x,
                     transform_matrix,
                     channel_axis=0,
@@ -211,6 +223,7 @@ def apply_transform(x,
     x = np.stack(channel_images, axis=0)
     x = np.rollaxis(x, 0, channel_axis + 1)
     return x
+'''
 
 
 def flip_axis(x, axis):
@@ -387,16 +400,21 @@ class ImageDataGenerator(object):
                  featurewise_std_normalization=False,
                  samplewise_std_normalization=False,
                  zca_whitening=False,
-                 rotation_range=0.,
-                 width_shift_range=0.,
-                 height_shift_range=0.,
+                 rotation_range_x=0.,
+                 rotation_range_y=0.,
+                 rotation_range_z=0.,
+                 y_shift_range=0.,
+                 x_shift_range=0.,
+                 z_shit_range=0.,
+                 depth_shift_range=0.,
                  shear_range=0.,
                  zoom_range=0.,
                  channel_shift_range=0.,
                  fill_mode='nearest',
                  cval=0.,
-                 horizontal_flip=False,
-                 vertical_flip=False,
+                 x_flip=False,
+                 y_flip=False,
+                 z_flip=False,
                  rescale=None,
                  preprocessing_function=None,
                  data_format=None):
@@ -407,16 +425,20 @@ class ImageDataGenerator(object):
         self.featurewise_std_normalization = featurewise_std_normalization
         self.samplewise_std_normalization = samplewise_std_normalization
         self.zca_whitening = zca_whitening
-        self.rotation_range = rotation_range
-        self.width_shift_range = width_shift_range
-        self.height_shift_range = height_shift_range
+        self.rotation_range_z = rotation_range_z
+        self.rotation_range_z = rotation_range_y
+        self.rotation_range_z = rotation_range_x
+        self.z_shift_range = z_shift_range
+        self.y_shift_range = y_shift_range
+        self.x_shift_range = x_shift_range
         self.shear_range = shear_range
         self.zoom_range = zoom_range
         self.channel_shift_range = channel_shift_range
         self.fill_mode = fill_mode
         self.cval = cval
-        self.horizontal_flip = horizontal_flip
-        self.vertical_flip = vertical_flip
+        self.x_flip = x_flip
+        self.y_flip = y_flip
+        self.z_flip = z_flip
         self.rescale = rescale
         self.preprocessing_function = preprocessing_function
 
@@ -495,9 +517,9 @@ class ImageDataGenerator(object):
         # x is a single image, so it doesn't have image number at index 0
         img_channel_axis = self.channel_axis - 1
         if self.samplewise_center:
-            x -= np.mean(x, axis=img_channel_axis, keepdims=True)
+            x -= np.mean(x, keepdims=True)
         if self.samplewise_std_normalization:
-            x /= (np.std(x, axis=img_channel_axis, keepdims=True) + 1e-7)
+            x /= (np.std(x, keepdims=True) + 1e-7)
 
         if self.featurewise_center:
             if self.mean is not None:
@@ -515,6 +537,7 @@ class ImageDataGenerator(object):
                               '`featurewise_std_normalization`, but it hasn\'t'
                               'been fit on any training data. Fit it '
                               'first by calling `.fit(numpy_data)`.')
+        '''        
         if self.zca_whitening:
             if self.principal_components is not None:
                 flatx = np.reshape(x, (x.size))
@@ -525,6 +548,7 @@ class ImageDataGenerator(object):
                               '`zca_whitening`, but it hasn\'t'
                               'been fit on any training data. Fit it '
                               'first by calling `.fit(numpy_data)`.')
+        '''
         return x
 
     def random_transform(self, x):
@@ -543,21 +567,40 @@ class ImageDataGenerator(object):
 
         # use composition of homographies
         # to generate final transform that needs to be applied
-        if self.rotation_range:
-            theta = np.pi / 180 * np.random.uniform(-self.rotation_range, self.rotation_range)
+        if self.rotation_range_x:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_x, self.rotation_range_x)
+            x = ndi.interpolation.rotate(x,theta,(1,2),cval=np.mean(x, keepdims=True))
+        else:
+            theta = 0
+        if self.rotation_range_y:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_y, self.rotation_range_y)
+            x = ndi.interpolation.rotate(x,theta,(0,2),cval=np.mean(x, keepdims=True))
+        else:
+            theta = 0
+        if self.rotation_range_z:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_z, self.rotation_range_z)
+            x = ndi.interpolation.rotate(x,theta,(0,1),cval=np.mean(x, keepdims=True))
         else:
             theta = 0
 
-        if self.height_shift_range:
-            tx = np.random.uniform(-self.height_shift_range, self.height_shift_range) * x.shape[img_row_axis]
+        if self.x_shift_range:
+            tx = np.random.uniform(-self.x_shift_range, self.x_shift_range) * x.shape[x_axis]
         else:
             tx = 0
 
-        if self.width_shift_range:
-            ty = np.random.uniform(-self.width_shift_range, self.width_shift_range) * x.shape[img_col_axis]
+        if self.y_shift_range:
+            ty = np.random.uniform(-self.y_shift_range, self.y_shift_range) * x.shape[y_axis]
         else:
             ty = 0
 
+        if self.z_shift_range:
+            tz = np.random.uniform(-self.z_shift_range, self.z_shift_range) * x.shape[z_axis]
+        else:
+            tz = 0  
+
+        if tx != or ty != 0 or tz != 0:
+            x = ndi.interpolation.shift(x, (tx, ty, tz),cval=np.mean(x, keepdims=True))
+        '''
         if self.shear_range:
             shear = np.random.uniform(-self.shear_range, self.shear_range)
         else:
@@ -567,7 +610,7 @@ class ImageDataGenerator(object):
             zx, zy = 1, 1
         else:
             zx, zy = np.random.uniform(self.zoom_range[0], self.zoom_range[1], 2)
-
+        
         transform_matrix = None
         if theta != 0:
             rotation_matrix = np.array([[np.cos(theta), -np.sin(theta), 0],
@@ -575,10 +618,10 @@ class ImageDataGenerator(object):
                                         [0, 0, 1]])
             transform_matrix = rotation_matrix
 
-        if tx != 0 or ty != 0:
+        if tx != 0 or ty != 0 or tz != 0:
             shift_matrix = np.array([[1, 0, tx],
                                      [0, 1, ty],
-                                     [0, 0, 1]])
+                                     [0, 0, tz]])
             transform_matrix = shift_matrix if transform_matrix is None else np.dot(transform_matrix, shift_matrix)
 
         if shear != 0:
@@ -592,24 +635,27 @@ class ImageDataGenerator(object):
                                     [0, zy, 0],
                                     [0, 0, 1]])
             transform_matrix = zoom_matrix if transform_matrix is None else np.dot(transform_matrix, zoom_matrix)
+        '''
 
+        '''
         if transform_matrix is not None:
-            h, w = x.shape[img_row_axis], x.shape[img_col_axis]
-            transform_matrix = transform_matrix_offset_center(transform_matrix, h, w)
+            i, j, k = x.shape[x_axis], x.shape[y_axis], z.shape[z_axis]
+            transform_matrix = transform_matrix_offset_center(transform_matrix, i, j, k)
             x = apply_transform(x, transform_matrix, img_channel_axis,
                                 fill_mode=self.fill_mode, cval=self.cval)
+        '''
 
-        if self.channel_shift_range != 0:
-            x = random_channel_shift(x,
-                                     self.channel_shift_range,
-                                     img_channel_axis)
-        if self.horizontal_flip:
+        if self.x_flip:
             if np.random.random() < 0.5:
-                x = flip_axis(x, img_col_axis)
+                x = flip_axis(x, x_axis)
 
-        if self.vertical_flip:
+        if self.y_flip:
             if np.random.random() < 0.5:
-                x = flip_axis(x, img_row_axis)
+                x = flip_axis(x, y_axis)
+
+        if self.z_flip:
+            if np.random.random() < 0.5:
+                x = flip_axis(x, z_axis)
 
         return x
 
@@ -655,24 +701,26 @@ class ImageDataGenerator(object):
             x = ax
 
         if self.featurewise_center:
-            self.mean = np.mean(x, axis=(0, self.row_axis, self.col_axis))
-            broadcast_shape = [1, 1, 1]
-            broadcast_shape[self.channel_axis - 1] = x.shape[self.channel_axis]
-            self.mean = np.reshape(self.mean, broadcast_shape)
+            self.mean = np.mean(x)#, axis=(0, self.row_axis, self.col_axis))
+            #broadcast_shape = [1, 1, 1]
+            #broadcast_shape[self.channel_axis - 1] = x.shape[self.channel_axis]
+            #self.mean = np.reshape(self.mean, broadcast_shape)
             x -= self.mean
 
         if self.featurewise_std_normalization:
-            self.std = np.std(x, axis=(0, self.row_axis, self.col_axis))
-            broadcast_shape = [1, 1, 1]
-            broadcast_shape[self.channel_axis - 1] = x.shape[self.channel_axis]
-            self.std = np.reshape(self.std, broadcast_shape)
+            self.std = np.std(x)#, axis=(0, self.row_axis, self.col_axis))
+            #broadcast_shape = [1, 1, 1]
+            #broadcast_shape[self.channel_axis - 1] = x.shape[self.channel_axis]
+            #self.std = np.reshape(self.std, broadcast_shape)
             x /= (self.std + K.epsilon())
 
+        '''
         if self.zca_whitening:
             flat_x = np.reshape(x, (x.shape[0], x.shape[1] * x.shape[2] * x.shape[3]))
             sigma = np.dot(flat_x.T, flat_x) / flat_x.shape[0]
             u, s, _ = linalg.svd(sigma)
             self.principal_components = np.dot(np.dot(u, np.diag(1. / np.sqrt(s + 10e-7))), u.T)
+        '''
 
 
 class Iterator(object):
