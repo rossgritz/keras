@@ -13,6 +13,7 @@ from six.moves import range
 import os
 import threading
 import warnings
+import scipy.misc
 
 from keras import backend as K
 
@@ -410,7 +411,7 @@ class ImageDataGenerator(object):
                  z_shift_range=0.,
                  width_shift_range=0.,
                  height_shift_range=0.,
-		 horizontal_flip=False,
+         horizontal_flip=False,
                  vertical_flip=False,
                  rotation_range=0.,
                  shear_range=0.,
@@ -507,6 +508,26 @@ class ImageDataGenerator(object):
             save_format=save_format,
             follow_links=follow_links)
 
+    def flow_from_segmentation_directory(self, directory,
+                            target_size=(512, 512), color_mode='grayscale',
+                            classes=None, class_mode='categorical',
+                            batch_size=32, shuffle=True, seed=None,
+                            save_to_dir=None,
+                            save_prefix='',
+                            save_format='jpeg',
+                            follow_links=False):
+        return SegmentationDirectoryIterator(
+            directory, self,
+            target_size=target_size, color_mode=color_mode,
+            classes=classes, class_mode=class_mode,
+            data_format=self.data_format,
+            batch_size=batch_size, shuffle=shuffle, seed=seed,
+            save_to_dir=save_to_dir,
+            save_prefix=save_prefix,
+            save_format=save_format,
+            follow_links=follow_links)
+
+
     def standardize(self, x):
         """Apply the normalization configuration to a batch of inputs.
 
@@ -571,25 +592,27 @@ class ImageDataGenerator(object):
         #img_col_axis = self.col_axis - 1
         #img_channel_axis = self.channel_axis - 1
 
-	x_axis = self.row_axis-1
+        x_axis = self.row_axis-1
         y_axis = self.col_axis-1
         z_axis = self.channel_axis-1
 
-	# use composition of homographies
+        xmean = np.mean(x, keepdims=True)
+
+       # use composition of homographies
         # to generate final transform that needs to be applied
         if self.rotation_range_x:
             theta = np.pi / 180 * np.random.uniform(-self.rotation_range_x, self.rotation_range_x)
-            ndi.interpolation.rotate(x,theta,(1,2),cval=np.mean(x, keepdims=True),reshape=False,output=x)
+            ndi.interpolation.rotate(x,theta,(1,2),cval=xmean,reshape=False,output=x)
         else:
             theta = 0
         if self.rotation_range_y:
             theta = np.pi / 180 * np.random.uniform(-self.rotation_range_y, self.rotation_range_y)
-            ndi.interpolation.rotate(x,theta,(0,2),cval=np.mean(x, keepdims=True),reshape=False,output=x)
+            ndi.interpolation.rotate(x,theta,(0,2),cval=xmean,reshape=False,output=x)
         else:
             theta = 0
         if self.rotation_range_z:
             theta = np.pi / 180 * np.random.uniform(-self.rotation_range_z, self.rotation_range_z)
-            ndi.interpolation.rotate(x,theta,(0,1),cval=np.mean(x, keepdims=True),reshape=False,output=x)
+            ndi.interpolation.rotate(x,theta,(0,1),cval=xmean,reshape=False,output=x)
         else:
             theta = 0
 
@@ -609,9 +632,9 @@ class ImageDataGenerator(object):
             tz = 0  
 
         if tx != 0 or ty != 0 or tz != 0:
-            x = ndi.interpolation.shift(x, (tx, ty, tz),cval=np.mean(x, keepdims=True))
+            x = ndi.interpolation.shift(x, (tx, ty, tz),cval=xmean)
 
-	'''
+        '''
         if self.shear_range:
             shear = np.random.uniform(-self.shear_range, self.shear_range)
         else:
@@ -669,6 +692,72 @@ class ImageDataGenerator(object):
                 x = flip_axis(x, z_axis)
 
         return x
+
+
+    def dual_random_transform(self, x, y):
+
+        x_axis = self.row_axis-1
+        y_axis = self.col_axis-1
+        z_axis = self.channel_axis-1
+
+        xmean = np.mean(x, keepdims=True)
+
+        if self.rotation_range_x:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_x, self.rotation_range_x)
+            ndi.interpolation.rotate(x,theta,(1,2),cval=xmean,reshape=False,output=x)
+            ndi.interpolation.rotate(y,theta,(1,2),cval=0,reshape=False,output=y)
+        else:
+            theta = 0
+        if self.rotation_range_y:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_y, self.rotation_range_y)
+            ndi.interpolation.rotate(x,theta,(0,2),cval=xmean,reshape=False,output=x)
+            ndi.interpolation.rotate(y,theta,(0,2),cval=0,reshape=False,output=y)
+        else:
+            theta = 0
+        if self.rotation_range_z:
+            theta = np.pi / 180 * np.random.uniform(-self.rotation_range_z, self.rotation_range_z)
+            ndi.interpolation.rotate(x,theta,(0,1),cval=xmean,reshape=False,output=x)
+            ndi.interpolation.rotate(y,theta,(0,1),cval=0,reshape=False,output=y)
+        else:
+            theta = 0
+
+        if self.x_shift_range:
+            tx = np.random.uniform(-self.x_shift_range, self.x_shift_range) * x.shape[x_axis]
+        else:
+            tx = 0
+
+        if self.y_shift_range:
+            ty = np.random.uniform(-self.y_shift_range, self.y_shift_range) * x.shape[y_axis]
+        else:
+            ty = 0
+
+        if self.z_shift_range:
+            tz = np.random.uniform(-self.z_shift_range, self.z_shift_range) * x.shape[z_axis]
+        else:
+            tz = 0  
+
+        if tx != 0 or ty != 0 or tz != 0:
+            x = ndi.interpolation.shift(x, (tx, ty, tz),cval=xmean)
+            y = ndi.interpolation.shift(y, (tx, ty, tz),cval=0)
+
+        if self.x_flip:
+            if np.random.random() < 0.5:
+                x = flip_axis(x, x_axis)
+                y = flip_axis(y, x_axis)
+
+        if self.y_flip:
+            if np.random.random() < 0.5:
+                x = flip_axis(x, y_axis)
+                y = flip_axis(y, y_axis)
+
+        if self.z_flip:
+            if np.random.random() < 0.5:
+                x = flip_axis(x, z_axis)
+                y = flip_axis(y, z_axis)
+
+        return x, y
+
+
 
     def fit(self, x,
             augment=False,
@@ -1039,4 +1128,162 @@ class DirectoryIterator(Iterator):
                 batch_y[i, label] = 1.
         else:
             return batch_x
+        return batch_x, batch_y
+
+
+
+
+def img_to_3d_array(img, mask=False):
+    if not mask:
+        newImage = np.ones((64,64,64))
+        for i in range(8):
+            for j in range(8):
+                newImage[i*8+j,:,:] = img[i*64:(i+1)*64,j*64:(j+1)*64]
+    else:
+        newImage = np.ones((32,32,32))
+        for i in range(2,6):
+            for j in range(8):
+                newImage[(i-2)*8+j,:,:] = img[i*64+16:(i+1)*64-16,j*64+16:(j+1)*64-16]
+    return newImage
+
+
+
+class SegmentationDirectoryIterator(Iterator):
+
+    def __init__(self, directory, image_data_generator,
+                 target_size=(512, 512), color_mode='grayscale',
+                 classes=None, class_mode='categorical',
+                 batch_size=32, shuffle=True, seed=None,
+                 data_format=None,
+                 save_to_dir=None, save_prefix='', save_format='jpeg',
+                 follow_links=False):
+
+        self.directory = directory
+        self.image_data_generator = image_data_generator
+        self.target_size = tuple(target_size)
+        self.data_format = data_format
+        self.image_shape = (1,) + self.target_size
+        self.class_mode = class_mode
+        self.color_mode = color_mode
+
+        self.save_to_dir = save_to_dir
+        self.save_prefix = save_prefix
+        self.save_format = save_format
+
+        print(batch_size)
+
+        # first, count the number of samples and classes
+        self.samples = 0
+
+        if not classes:
+            classes = []
+            for subdir in sorted(os.listdir(directory)):
+                if os.path.isdir(os.path.join(directory, subdir)):
+                    classes.append(subdir)
+        self.num_class = len(classes)
+        self.class_indices = dict(zip(classes, range(len(classes))))
+
+        def _recursive_list(subpath):
+            return sorted(os.walk(subpath, followlinks=follow_links), key=lambda tpl: tpl[0])
+
+        #for subdir in classes:
+        #    subpath = os.path.join(directory, subdir)
+        #for root, _, files in _recursive_list(directory):
+        for parent, subdir, files in os.walk(directory):
+            for fname in files:
+                is_valid = False
+                #for extension in white_list_formats:
+                if fname[-4:] == '.png':# + extension):
+                    is_valid = True
+                    #break
+                if is_valid:
+                    self.samples += 1
+        print('Found %d images belonging to %d classes.' % (self.samples, self.num_class))
+
+        # second, build an index of the images in the different class subfolders
+        self.filenames = []
+        self.classes = np.zeros((self.samples,), dtype='int32')
+        i = 0
+        '''for subdir in classes:
+            subpath = os.path.join(directory, subdir)
+            for root, _, files in _recursive_list(subpath):
+                for fname in files:
+                    is_valid = False
+                    for extension in white_list_formats:
+                        if fname.lower().endswith('.' + extension):
+                            is_valid = True
+                            break
+                    if is_valid:'''
+        for parent, subdir, files in os.walk(directory):
+            for fname in files:
+                is_valid = False
+                #for extension in white_list_formats:
+                if fname[-4:] == '.png':# + extension):
+                    is_valid = True
+                    #break
+                if is_valid:
+                    self.classes[i] = -1
+                    i += 1
+                    # add filename relative to directory
+                    absolute_path = os.path.join(directory, fname)
+                    self.filenames.append(os.path.relpath(absolute_path, directory))
+        super(SegmentationDirectoryIterator, self).__init__(self.samples, batch_size, shuffle, seed)
+
+    def next(self):
+        """For python 2.x.
+
+        # Returns
+            The next batch.
+        """
+        with self.lock:
+            index_array, current_index, current_batch_size = next(self.index_generator)
+        # The transformation of images is not under thread lock
+        # so it can be done in parallel
+        batch_x = np.zeros((current_batch_size,) + (1,64,64,64), dtype=K.floatx())
+        batch_y = np.zeros((current_batch_size,) + (1,32,32,32), dtype=K.floatx())
+
+        grayscale = self.color_mode == 'grayscale'
+        # build batch of image data
+        for i, j in enumerate(index_array):
+            fname = self.filenames[j]
+            img = scipy.misc.imread(os.path.join(self.directory, fname))#,
+                           #grayscale=grayscale,
+                           #target_size=self.target_size)
+            x = img_to_3d_array(img)
+            fname = os.path.join(self.directory, fname)
+            fname = fname[:-9] #Truncates image filename 
+            fname = fname.split('/')
+            #print(fname)
+            fname[-2] = 'masks'
+            fname2 = ''
+            for i in range(1,len(fname)):
+                fname2 = fname2 + '/' + fname[i]
+            fname2 = fname2 + 'mask.png'
+            y = scipy.misc.imread(fname2)
+            y = img_to_3d_array(y,True)
+            x,y = self.image_data_generator.dual_random_transform(x,y)
+            x = self.image_data_generator.standardize(x)
+            batch_x[i] = x
+            batch_y[i] = y
+        # optionally save augmented images to disk for debugging purposes
+        if self.save_to_dir:
+            for i in range(current_batch_size):
+                img = array_to_img(batch_x[i], self.data_format, scale=True)
+                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=self.save_prefix,
+                                                                  index=current_index + i,
+                                                                  hash=np.random.randint(1e4),
+                                                                  format=self.save_format)
+                img.save(os.path.join(self.save_to_dir, fname))
+        # build batch of labels
+        '''if self.class_mode == 'sparse':
+            batch_y = self.classes[index_array]
+        elif self.class_mode == 'binary':
+            batch_y = self.classes[index_array].astype(K.floatx())
+        elif self.class_mode == 'categorical':
+            batch_y = np.zeros((len(batch_x), self.num_class), dtype=K.floatx())
+            for i, label in enumerate(self.classes[index_array]):
+                batch_y[i, label] = 1.
+        else:
+            return batch_x'''
+        print("GENERATES BATCH OF DATA")
         return batch_x, batch_y
