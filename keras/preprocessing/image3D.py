@@ -596,7 +596,7 @@ class ImageDataGenerator(object):
         y_axis = self.col_axis-1
         z_axis = self.channel_axis-1
 
-        xmean = np.mean(x, keepdims=True)
+        xmean = 0#np.mean(x, keepdims=True)
 
        # use composition of homographies
         # to generate final transform that needs to be applied
@@ -700,7 +700,7 @@ class ImageDataGenerator(object):
         y_axis = self.col_axis-1
         z_axis = self.channel_axis-1
 
-        xmean = np.mean(x, keepdims=True)
+        xmean = 0#np.mean(x, keepdims=True)
 
         if self.rotation_range_x:
             theta = np.pi / 180 * np.random.uniform(-self.rotation_range_x, self.rotation_range_x)
@@ -720,7 +720,7 @@ class ImageDataGenerator(object):
             ndi.interpolation.rotate(y,theta,(0,1),cval=0,reshape=False,output=y)
         else:
             theta = 0
-
+        
         if self.x_shift_range:
             tx = np.random.uniform(-self.x_shift_range, self.x_shift_range) * x.shape[x_axis]
         else:
@@ -734,12 +734,16 @@ class ImageDataGenerator(object):
         if self.z_shift_range:
             tz = np.random.uniform(-self.z_shift_range, self.z_shift_range) * x.shape[z_axis]
         else:
-            tz = 0  
-
+            tz = 0
+        #print('\n')  
+        #print(tx)
+        #print(ty)
+        #print(tz)
         if tx != 0 or ty != 0 or tz != 0:
             x = ndi.interpolation.shift(x, (tx, ty, tz),cval=xmean)
             y = ndi.interpolation.shift(y, (tx, ty, tz),cval=0)
-
+        
+        
         if self.x_flip:
             if np.random.random() < 0.5:
                 x = flip_axis(x, x_axis)
@@ -754,7 +758,7 @@ class ImageDataGenerator(object):
             if np.random.random() < 0.5:
                 x = flip_axis(x, z_axis)
                 y = flip_axis(y, z_axis)
-
+       
         return x, y
 
 
@@ -1131,20 +1135,50 @@ class DirectoryIterator(Iterator):
         return batch_x, batch_y
 
 
+def array_to_3d_img(img, mask=False):
+    img = img[0]
+    if not mask:
+	newImage = np.zeros((512,512))
+	for i in range(8):
+	    for j in range(8):
+                newImage[i*64:(i+1)*64,j*64:(j+1)*64] = img[i*8+j,:,:]
+	newImage *= 255.
+    else:
+	newImage = np.zeros((128,256))
+	for i in range(4):
+	    for j in range(8):
+		newImage[i*32:(i+1)*32,j*32:(j+1)*32] = img[i*8+j,:,:]
+    newImage = np.expand_dims(newImage,axis=0)
+    return newImage
 
 
 def img_to_3d_array(img, mask=False):
     if not mask:
-        newImage = np.ones((64,64,64))
+        newImage = np.zeros((64,64,64))
         for i in range(8):
             for j in range(8):
                 newImage[i*8+j,:,:] = img[i*64:(i+1)*64,j*64:(j+1)*64]
+	#newImage /= 255.
     else:
-        newImage = np.ones((32,32,32))
+        newImage = np.zeros((32,32,32))
         for i in range(2,6):
             for j in range(8):
                 newImage[(i-2)*8+j,:,:] = img[i*64+16:(i+1)*64-16,j*64+16:(j+1)*64-16]
+    newImage /= 255.
     return newImage
+
+
+
+def mask_image(image, mask, fullMask=False):
+    image = image[0]
+    mask = mask[0]
+    dummy = np.zeros(image.shape)
+    if fullMask:
+        mask = np.where(mask < 1, 0, mask)
+    for i in range(2,6):
+	for j in range(8):
+	    dummy[i*64+16:(i+1)*64-16,j*64+16:(j+1)*64-16] = mask[(i-2)*8+j,:,:]
+    return np.expand_dims(np.where(dummy > 0, image, dummy),axis=0)
 
 
 
@@ -1249,31 +1283,80 @@ class SegmentationDirectoryIterator(Iterator):
             img = scipy.misc.imread(os.path.join(self.directory, fname))#,
                            #grayscale=grayscale,
                            #target_size=self.target_size)
+            #print('/n')
+            #print(np.sum(img))
+
             x = img_to_3d_array(img)
+
+            #print(np.sum(x))
+
             fname = os.path.join(self.directory, fname)
             fname = fname[:-9] #Truncates image filename 
             fname = fname.split('/')
-            #print(fname)
             fname[-2] = 'masks'
             fname2 = ''
-            for i in range(1,len(fname)):
-                fname2 = fname2 + '/' + fname[i]
-            fname2 = fname2 + 'mask.png'
+            for pt in range(1,len(fname)):
+                fname2 = fname2 + '/' + fname[pt]
+	    if fname2[-1] == '_':
+              fname2 = fname2 + 'mask.png'
+	    else:
+	      fname2 = fname2 + '_mask.png'
             y = scipy.misc.imread(fname2)
+
+            #print(np.sum(y))
+
             y = img_to_3d_array(y,True)
+            y = np.clip(y,0,1)
+	    y = np.where(y < 1, 0, y)
+            #print(np.sum(y))
+
             x,y = self.image_data_generator.dual_random_transform(x,y)
+	    
+            #print(np.sum(x))
+            #print(np.sum(y))
+
             x = self.image_data_generator.standardize(x)
+
+            #print(np.sum(x))
+
             batch_x[i] = x
             batch_y[i] = y
+            #print('\n')
+	    #print(np.sum(x))
+	    #print(np.sum(y))
         # optionally save augmented images to disk for debugging purposes
+        Hash = np.random.randint(1e4)
         if self.save_to_dir:
             for i in range(current_batch_size):
-                img = array_to_img(batch_x[i], self.data_format, scale=True)
-                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=self.save_prefix,
+                img = array_to_3d_img(batch_x[i])
+                img = mask_image(img,batch_y[i],True)
+                img = array_to_img(img, self.data_format, scale=True)
+                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=str(Hash)+'x'+self.save_prefix,
                                                                   index=current_index + i,
-                                                                  hash=np.random.randint(1e4),
+                                                                  hash=Hash,
                                                                   format=self.save_format)
                 img.save(os.path.join(self.save_to_dir, fname))
+
+        if self.save_to_dir:
+            for i in range(current_batch_size):
+                img = array_to_3d_img(batch_x[i])
+		img = mask_image(img,batch_y[i])
+                img = array_to_img(img, self.data_format, scale=True)
+                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=str(Hash)+'xx'+self.save_prefix,
+                                                                  index=current_index + i,
+                                                                  hash=Hash,
+                                                                  format=self.save_format)
+                img.save(os.path.join(self.save_to_dir, fname))
+        if self.save_to_dir:
+            for i in range(current_batch_size):
+		img = array_to_3d_img(batch_x[i])
+                img = array_to_img(img, self.data_format, scale=True)
+                fname = '{prefix}_{index}_{hash}.{format}'.format(prefix=str(Hash)+'xxx'+self.save_prefix,
+                                                                  index=current_index + i,
+                                                                  hash=Hash,
+                                                                  format=self.save_format)
+                img.save(os.path.join(self.save_to_dir, fname))
+
         # build batch of labels
         '''if self.class_mode == 'sparse':
             batch_y = self.classes[index_array]
@@ -1285,5 +1368,5 @@ class SegmentationDirectoryIterator(Iterator):
                 batch_y[i, label] = 1.
         else:
             return batch_x'''
-        print("GENERATES BATCH OF DATA")
+        #print("GENERATES BATCH OF DATA")
         return batch_x, batch_y
