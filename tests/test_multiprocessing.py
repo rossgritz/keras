@@ -7,12 +7,24 @@ from keras.layers.core import Dense
 from keras.utils.test_utils import keras_test
 
 
+@pytest.fixture
+def in_tmpdir(tmpdir):
+    """Runs a function in a temporary directory.
+
+    Checks that the directory is empty afterwards.
+    """
+    with tmpdir.as_cwd():
+        yield None
+    assert not tmpdir.listdir()
+
+
 @keras_test
 def test_multiprocessing_training():
     arr_data = np.random.randint(0, 256, (50, 2))
     arr_labels = np.random.randint(0, 2, 50)
+    arr_weights = np.random.random(50)
 
-    def custom_generator():
+    def custom_generator(use_weights=False):
         batch_size = 10
         n_samples = 50
 
@@ -22,7 +34,11 @@ def test_multiprocessing_training():
             end = start + batch_size
             X = arr_data[start: end]
             y = arr_labels[start: end]
-            yield X, y
+            if use_weights:
+                w = arr_weights[start: end]
+                yield X, y, w
+            else:
+                yield X, y
 
     # Build a NN
     model = Sequential()
@@ -44,9 +60,49 @@ def test_multiprocessing_training():
                         max_q_size=10,
                         pickle_safe=False)
 
+    model.fit_generator(custom_generator(True),
+                        steps_per_epoch=5,
+                        validation_data=(arr_data[:10],
+                                         arr_labels[:10],
+                                         arr_weights[:10]),
+                        validation_steps=1)
+
+    model.fit_generator(custom_generator(True),
+                        steps_per_epoch=5,
+                        validation_data=custom_generator(True),
+                        validation_steps=1)
+
+    # Test invalid use cases
+    def invalid_generator():
+        while True:
+            yield arr_data[:10], arr_data[:10], arr_labels[:10], arr_labels[:10]
+
+    # not specified `validation_steps`
+    with pytest.raises(ValueError):
+        model.fit_generator(custom_generator(),
+                            steps_per_epoch=5,
+                            validation_data=custom_generator())
+
+    # validation data is neither a tuple nor a triple.
+    with pytest.raises(ValueError):
+        model.fit_generator(custom_generator(),
+                            steps_per_epoch=5,
+                            validation_data=(arr_data[:10],
+                                             arr_data[:10],
+                                             arr_labels[:10],
+                                             arr_weights[:10]),
+                            validation_steps=1)
+
+    # validation generator is neither a tuple nor a triple.
+    with pytest.raises(ValueError):
+        model.fit_generator(custom_generator(),
+                            steps_per_epoch=5,
+                            validation_data=invalid_generator(),
+                            validation_steps=1)
+
 
 @keras_test
-def test_multiprocessing_training_fromfile():
+def test_multiprocessing_training_fromfile(in_tmpdir):
     arr_data = np.random.randint(0, 256, (50, 2))
     arr_labels = np.random.randint(0, 2, 50)
     np.savez('data.npz', **{'data': arr_data, 'labels': arr_labels})
@@ -170,13 +226,13 @@ def test_multiprocessing_fit_error():
 
     samples = batch_size * (good_batches + 1)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.fit_generator(
             custom_generator(), samples, 1,
             workers=4, pickle_safe=True,
         )
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.fit_generator(
             custom_generator(), samples, 1,
             pickle_safe=False,
@@ -199,13 +255,13 @@ def test_multiprocessing_evaluate_error():
     model.add(Dense(1, input_shape=(2, )))
     model.compile(loss='mse', optimizer='adadelta')
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.evaluate_generator(
             custom_generator(), good_batches + 1, 1,
             workers=4, pickle_safe=True,
         )
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.evaluate_generator(
             custom_generator(), good_batches + 1, 1,
             pickle_safe=False,
@@ -228,13 +284,13 @@ def test_multiprocessing_predict_error():
     model.add(Dense(1, input_shape=(2, )))
     model.compile(loss='mse', optimizer='adadelta')
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.predict_generator(
             custom_generator(), good_batches + 1, 1,
             workers=4, pickle_safe=True,
         )
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.predict_generator(
             custom_generator(), good_batches + 1, 1,
             pickle_safe=False,

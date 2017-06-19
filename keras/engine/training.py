@@ -100,7 +100,7 @@ def _standardize_input_data(data, names, shapes=None,
         if len(names) > 1:
             # Case: model expects multiple inputs but only received
             # a single Numpy array.
-            raise ValueError('The model expects ' + str(len(names)) +
+            raise ValueError('The model expects ' + str(len(names)) + ' ' +
                              exception_prefix +
                              ' arrays, but only received one array. '
                              'Found: array with shape ' + str(data.shape))
@@ -241,7 +241,7 @@ def _check_array_lengths(inputs, targets, weights):
 
 
 def _check_loss_and_target_compatibility(targets, loss_fns, output_shapes):
-    """Does validation on the compatiblity of targets and loss functions.
+    """Does validation on the compatibility of targets and loss functions.
 
     This helps prevent users from using loss functions incorrectly.
 
@@ -254,7 +254,7 @@ def _check_loss_and_target_compatibility(targets, loss_fns, output_shapes):
         ValueError: if a loss function or target array
             is incompatible with an output.
     """
-    key_losses = {'mean_square_error',
+    key_losses = {'mean_squared_error',
                   'binary_crossentropy',
                   'categorical_crossentropy'}
     for y, loss, shape in zip(targets, loss_fns, output_shapes):
@@ -621,6 +621,10 @@ class GeneratorEnqueuer(object):
             if self._pickle_safe:
                 self.queue = multiprocessing.Queue(maxsize=max_q_size)
                 self._stop_event = multiprocessing.Event()
+                if hasattr(data_generator_task, 'lock'):
+                    # We should replace the threading lock of the iterator
+                    # with a process-safe lock.
+                    data_generator_task.lock = multiprocessing.Lock()
             else:
                 self.queue = queue.Queue()
                 self._stop_event = threading.Event()
@@ -685,6 +689,8 @@ class Model(Container):
                 See [losses](/losses).
                 If the model has multiple outputs, you can use a different loss
                 on each output by passing a dictionary or a list of losses.
+                The loss value that will be minimized by the model
+                will then be the sum of all individual losses.
             metrics: list of metrics to be evaluated by the model
                 during training and testing.
                 Typically you will use `metrics=['accuracy']`.
@@ -694,6 +700,9 @@ class Model(Container):
             loss_weights: Optional list or dictionary specifying scalar
                 coefficients (Python floats) to weight the loss contributions
                 of different model outputs.
+                The loss value that will be minimized by the model
+                will then be the *weighted sum* of all individual losses,
+                weighted by the `loss_weights` coefficients.
                 If a list, it is expected to have a 1:1 mapping
                 to the model's outputs. If a tensor, it is expected to map
                 output names (strings) to scalar coefficients.
@@ -704,7 +713,8 @@ class Model(Container):
                 `sample_weight_mode` on each output by passing a
                 dictionary or a list of modes.
             **kwargs: when using the Theano backend, these arguments
-                are passed into K.function. Ignored for Tensorflow backend.
+                are passed into K.function. When using the Tensorflow backend,
+                these arguments are passed into `tf.Session.run`.
 
         # Raises
             ValueError: In case of invalid arguments for
@@ -1011,6 +1021,7 @@ class Model(Container):
             self.train_function = K.function(inputs,
                                              [self.total_loss] + self.metrics_tensors,
                                              updates=updates,
+                                             name='train_function',
                                              **self._function_kwargs)
 
     def _make_test_function(self):
@@ -1025,6 +1036,7 @@ class Model(Container):
             self.test_function = K.function(inputs,
                                             [self.total_loss] + self.metrics_tensors,
                                             updates=self.state_updates,
+                                            name='test_function',
                                             **self._function_kwargs)
 
     def _make_predict_function(self):
@@ -1041,6 +1053,7 @@ class Model(Container):
             self.predict_function = K.function(inputs,
                                                self.outputs,
                                                updates=self.state_updates,
+                                               name='predict_function',
                                                **kwargs)
 
     def _fit_loop(self, f, ins, out_labels=None, batch_size=32,
@@ -1151,6 +1164,8 @@ class Model(Container):
                     batch_logs[l] = o
 
                 callbacks.on_batch_end(batch_index, batch_logs)
+                if callback_model.stop_training:
+                    break
 
                 if batch_index == len(batches) - 1:  # Last batch.
                     if do_validation:
@@ -1365,7 +1380,7 @@ class Model(Container):
             batch_size: integer. Number of samples per gradient update.
             epochs: integer, the number of times to iterate
                 over the training data arrays.
-                verbose: 0, 1, or 2. Verbosity mode.
+            verbose: 0, 1, or 2. Verbosity mode.
                 0 = silent, 1 = verbose, 2 = one log line per epoch.
             callbacks: list of callbacks to be called during training.
                 See [callbacks](/callbacks).
@@ -1451,7 +1466,10 @@ class Model(Container):
 
         elif validation_split and 0. < validation_split < 1.:
             do_validation = True
-            split_at = int(len(x[0]) * (1. - validation_split))
+            if hasattr(x[0], 'shape'):
+                split_at = int(x[0].shape[0] * (1. - validation_split))
+            else:
+                split_at = int(len(x[0]) * (1. - validation_split))
             x, val_x = (_slice_arrays(x, 0, split_at), _slice_arrays(x, split_at))
             y, val_y = (_slice_arrays(y, 0, split_at), _slice_arrays(y, split_at))
             sample_weights, val_sample_weights = (
@@ -1831,8 +1849,11 @@ class Model(Container):
                                  str(validation_data))
             val_x, val_y, val_sample_weights = self._standardize_user_data(
                 val_x, val_y, val_sample_weight)
+            val_data = val_x + val_y + val_sample_weights
+            if self.uses_learning_phase and not isinstance(K.learning_phase(), int):
+                val_data += [0.]
             for cbk in callbacks:
-                cbk.validation_data = val_x + [val_y, val_sample_weights]
+                cbk.validation_data = val_data
         enqueuer = None
 
         try:
@@ -1939,7 +1960,7 @@ class Model(Container):
         The generator should return the same kind of data
         as accepted by `test_on_batch`.
 
-        Arguments:
+        # Arguments
             generator: Generator yielding tuples (inputs, targets)
                 or (inputs, targets, sample_weights)
             steps: Total number of steps (batches of samples)
@@ -2009,6 +2030,9 @@ class Model(Container):
                     batch_size = len(list(x.values())[0])
                 else:
                     batch_size = len(x)
+                if batch_size == 0:
+                    raise ValueError('Received an empty batch. '
+                                     'Batches should at least contain one item.')
                 all_outs.append(outs)
 
                 steps_done += 1
