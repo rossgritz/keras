@@ -1183,9 +1183,6 @@ class SegmentationDirectoryIterator(Iterator):
         self.num_class = len(classes)
         self.class_indices = dict(zip(classes, range(len(classes))))
 
-        def _recursive_list(subpath):
-            return sorted(os.walk(subpath, followlinks=follow_links), key=lambda tpl: tpl[0])
-
         #for subdir in classes:
         #    subpath = os.path.join(directory, subdir)
         #for root, _, files in _recursive_list(directory):
@@ -1244,6 +1241,7 @@ class SegmentationDirectoryIterator(Iterator):
 
         grayscale = self.color_mode == 'grayscale'
         # build batch of image data
+        print(index_array)
         for i, j in enumerate(index_array):
             fname = self.filenames[j]
             img = scipy.misc.imread(os.path.join(self.directory, fname))#,
@@ -1256,8 +1254,8 @@ class SegmentationDirectoryIterator(Iterator):
             #print(fname)
             fname[-2] = 'masks'
             fname2 = ''
-            for i in range(1,len(fname)):
-                fname2 = fname2 + '/' + fname[i]
+            for pt in range(1,len(fname)):
+                fname2 = fname2 + '/' + fname[pt]
             fname2 = fname2 + 'mask.png'
             y = scipy.misc.imread(fname2)
             y = img_to_3d_array(y,True)
@@ -1285,5 +1283,6 @@ class SegmentationDirectoryIterator(Iterator):
                 batch_y[i, label] = 1.
         else:
             return batch_x'''
+        batch_x = None
         print("GENERATES BATCH OF DATA")
         return batch_x, batch_y
