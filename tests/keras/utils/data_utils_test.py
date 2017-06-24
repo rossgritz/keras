@@ -9,11 +9,20 @@ from six.moves.urllib.parse import urljoin
 from keras.utils.data_utils import get_file
 from keras.utils.data_utils import validate_file
 from keras.utils.data_utils import _hash_file
-from keras import activations
-from keras import regularizers
 
 
-def test_data_utils():
+@pytest.fixture
+def in_tmpdir(tmpdir):
+    """Runs a function in a temporary directory.
+
+    Checks that the directory is empty afterwards.
+    """
+    with tmpdir.as_cwd():
+        yield None
+    assert not tmpdir.listdir()
+
+
+def test_data_utils(in_tmpdir):
     """Tests get_file from a url, plus extraction and validation.
     """
     dirname = 'data_utils'

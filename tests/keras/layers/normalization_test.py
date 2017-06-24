@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from numpy.testing import assert_allclose
 
-from keras.layers import Dense, Activation, Input
+from keras.layers import Input
 from keras.utils.test_utils import layer_test, keras_test
 from keras.layers import normalization
 from keras.models import Sequential, Model
@@ -15,7 +15,7 @@ input_shapes = [np.ones((10, 10)), np.ones((10, 10, 10))]
 
 
 @keras_test
-def basic_batchnorm_test():
+def test_basic_batchnorm():
     from keras import regularizers
     layer_test(normalization.BatchNormalization,
                kwargs={'momentum': 0.9,
@@ -29,9 +29,6 @@ def basic_batchnorm_test():
                        'moving_mean_initializer': 'zeros',
                        'moving_variance_initializer': 'ones'},
                input_shape=(3, 4, 2))
-    layer_test(normalization.BatchNormalization,
-               kwargs={'scale': False, 'center': False},
-               input_shape=(3, 3))
 
 
 @keras_test
